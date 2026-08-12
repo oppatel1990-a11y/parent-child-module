@@ -1,5 +1,5 @@
 name: Terraform CI/CD - Azure Landing Zone
-
+ 
 on:
   push:
     branches: [main, featuer/*]
@@ -13,13 +13,13 @@ on:
         default: "dev"
         type: choice
         options: [dev, test, prod]
-
+ 
 env:
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-
+ 
 jobs:
   lint:
     name: TFLint (${{ matrix.environment }})
@@ -32,12 +32,19 @@ jobs:
       - uses: terraform-linters/setup-tflint@v4
         with:
           tflint_version: latest
+      - name: Check environment folder exists
+        run: |
+          if [ ! -d "environment/${{ matrix.environment }}" ]; then
+            echo "Folder environment/${{ matrix.environment }} not found, skipping."
+            exit 0
+          fi
       - name: Run TFLint
+        if: hashFiles(format('environment/{0}/**', matrix.environment)) != ''
         working-directory: environment/${{ matrix.environment }}
         run: |
           tflint --init
           tflint --minimum-failure-severity=error
-
+ 
   security-scan:
     name: TFSec (${{ matrix.environment }})
     runs-on: ubuntu-latest
@@ -52,7 +59,7 @@ jobs:
           working_directory: environment/${{ matrix.environment }}
           soft_fail: false
           github_token: ${{ secrets.GITHUB_TOKEN }}
-
+ 
   secret-scan:
     name: TruffleHog
     runs-on: ubuntu-latest
@@ -65,7 +72,7 @@ jobs:
         with:
           path: ./
           extra_args: --only-verified
-
+ 
   terraform-plan:
     name: Terraform Plan (${{ matrix.environment }})
     runs-on: ubuntu-latest
@@ -90,7 +97,7 @@ jobs:
         with:
           name: tfplan-${{ matrix.environment }}
           path: environment/${{ matrix.environment }}/tfplan
-
+ 
   # Dev: auto-apply on every push to main (fast feedback, low risk environment)
   terraform-apply-dev:
     name: Terraform Apply (dev)
@@ -112,7 +119,7 @@ jobs:
       - name: Terraform Apply
         working-directory: environment/dev
         run: terraform apply -input=false -auto-approve tfplan
-
+ 
   # Test: auto-apply on push to main as well, mirrors dev risk profile
   terraform-apply-test:
     name: Terraform Apply (test)
