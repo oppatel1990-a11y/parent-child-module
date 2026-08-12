@@ -1,5 +1,5 @@
 name: Terraform CI/CD - Azure Landing Zone
- 
+
 on:
   push:
     branches: [main, featuer/*]
@@ -13,18 +13,19 @@ on:
         default: "dev"
         type: choice
         options: [dev, test, prod]
- 
+
 env:
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
- 
+
 jobs:
   lint:
     name: TFLint (${{ matrix.environment }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         environment: [dev, test]
     steps:
@@ -32,34 +33,36 @@ jobs:
       - uses: terraform-linters/setup-tflint@v4
         with:
           tflint_version: latest
-      - name: Check environment folder exists
-        run: |
-          if [ ! -d "environment/${{ matrix.environment }}" ]; then
-            echo "Folder environment/${{ matrix.environment }} not found, skipping."
-            exit 0
-          fi
       - name: Run TFLint
         if: hashFiles(format('environment/{0}/**', matrix.environment)) != ''
         working-directory: environment/${{ matrix.environment }}
         run: |
           tflint --init
           tflint --minimum-failure-severity=error
- 
+      - name: Skip notice
+        if: hashFiles(format('environment/{0}/**', matrix.environment)) == ''
+        run: echo "environment/${{ matrix.environment }} not found, skipping TFLint."
+
   security-scan:
     name: TFSec (${{ matrix.environment }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         environment: [dev, test]
     steps:
       - uses: actions/checkout@v4
       - name: Run tfsec
+        if: hashFiles(format('environment/{0}/**', matrix.environment)) != ''
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           working_directory: environment/${{ matrix.environment }}
           soft_fail: false
           github_token: ${{ secrets.GITHUB_TOKEN }}
- 
+      - name: Skip notice
+        if: hashFiles(format('environment/{0}/**', matrix.environment)) == ''
+        run: echo "environment/${{ matrix.environment }} not found, skipping tfsec."
+
   secret-scan:
     name: TruffleHog
     runs-on: ubuntu-latest
@@ -72,33 +75,45 @@ jobs:
         with:
           path: ./
           extra_args: --only-verified
- 
+
   terraform-plan:
     name: Terraform Plan (${{ matrix.environment }})
     runs-on: ubuntu-latest
     needs: [lint, security-scan, secret-scan]
     strategy:
+      fail-fast: false
       matrix:
         environment: [dev, test]
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      - name: Check folder exists
+        run: |
+          if [ ! -d "environment/${{ matrix.environment }}" ]; then
+            echo "environment/${{ matrix.environment }} not found. Skipping plan."
+            echo "SKIP=true" >> $GITHUB_ENV
+          else
+            echo "SKIP=false" >> $GITHUB_ENV
+          fi
       - name: Terraform Init
+        if: env.SKIP == 'false'
         working-directory: environment/${{ matrix.environment }}
         run: terraform init
       - name: Terraform Validate
+        if: env.SKIP == 'false'
         working-directory: environment/${{ matrix.environment }}
         run: terraform validate
       - name: Terraform Plan
+        if: env.SKIP == 'false'
         working-directory: environment/${{ matrix.environment }}
         run: terraform plan -input=false -out=tfplan
       - name: Upload plan artifact
+        if: env.SKIP == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ matrix.environment }}
           path: environment/${{ matrix.environment }}/tfplan
- 
-  # Dev: auto-apply on every push to main (fast feedback, low risk environment)
+
   terraform-apply-dev:
     name: Terraform Apply (dev)
     runs-on: ubuntu-latest
@@ -108,19 +123,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      - name: Check folder exists
+        run: |
+          if [ ! -d "environment/dev" ]; then
+            echo "environment/dev not found. Skipping apply."
+            echo "SKIP=true" >> $GITHUB_ENV
+          else
+            echo "SKIP=false" >> $GITHUB_ENV
+          fi
       - name: Terraform Init
+        if: env.SKIP == 'false'
         working-directory: environment/dev
         run: terraform init
       - name: Download plan artifact
+        if: env.SKIP == 'false'
         uses: actions/download-artifact@v4
         with:
           name: tfplan-dev
           path: environment/dev
       - name: Terraform Apply
+        if: env.SKIP == 'false'
         working-directory: environment/dev
         run: terraform apply -input=false -auto-approve tfplan
- 
-  # Test: auto-apply on push to main as well, mirrors dev risk profile
+
   terraform-apply-test:
     name: Terraform Apply (test)
     runs-on: ubuntu-latest
@@ -130,14 +155,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      - name: Check folder exists
+        run: |
+          if [ ! -d "environment/test" ]; then
+            echo "environment/test not found. Skipping apply."
+            echo "SKIP=true" >> $GITHUB_ENV
+          else
+            echo "SKIP=false" >> $GITHUB_ENV
+          fi
       - name: Terraform Init
+        if: env.SKIP == 'false'
         working-directory: environment/test
         run: terraform init
       - name: Download plan artifact
+        if: env.SKIP == 'false'
         uses: actions/download-artifact@v4
         with:
           name: tfplan-test
           path: environment/test
       - name: Terraform Apply
+        if: env.SKIP == 'false'
         working-directory: environment/test
         run: terraform apply -input=false -auto-approve tfplan
