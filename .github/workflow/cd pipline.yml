@@ -104,29 +104,14 @@ jobs:
       - name: Terraform Init
         working-directory: environment/dev
         run: terraform init
-      - name: Download plan artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-dev
-          path: environment/dev
-      - name: Terraform Apply
-        working-directory: environment/dev
-        run: terraform apply -input=false -auto-approve tfplan
 
-  # Test: auto-apply on push to main as well, mirrors dev risk profile
-  terraform-apply-test:
-    name: Terraform Apply (test)
-    runs-on: ubuntu-latest
-    needs: terraform-plan
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-      - name: Terraform Init
-        working-directory: environment/test
-        run: terraform init
-      - name: Download plan artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-t
+      - name: Terraform Format Check
+        run: terraform fmt -check
+
+      - name: Run TFLint
+        uses: terraform-linters/setup-tflint@v4
+      - run: tflint --init
+      - run: tflint
+
+      - name: Run tfsec (security scan)
+        uses: aquasecurity/tfsec-action@v1.0.3
