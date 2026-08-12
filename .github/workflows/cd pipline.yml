@@ -2,7 +2,7 @@ name: Terraform CI/CD - Azure Landing Zone
 
 on:
   push:
-    branches: [main, feature/*]
+    branches: [main, featuer/*]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [dev, test, prod]
+        environment: [dev, test]
     steps:
       - uses: actions/checkout@v4
       - uses: terraform-linters/setup-tflint@v4
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [dev, test, prod]
+        environment: [dev, test]
     steps:
       - uses: actions/checkout@v4
       - name: Run tfsec
@@ -72,7 +72,7 @@ jobs:
     needs: [lint, security-scan, secret-scan]
     strategy:
       matrix:
-        environment: [dev, test, prod]
+        environment: [dev, test]
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -129,4 +129,8 @@ jobs:
       - name: Download plan artifact
         uses: actions/download-artifact@v4
         with:
-          name: tfplan-t
+          name: tfplan-test
+          path: environment/test
+      - name: Terraform Apply
+        working-directory: environment/test
+        run: terraform apply -input=false -auto-approve tfplan
